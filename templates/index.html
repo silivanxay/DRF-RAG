@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ເອກະສານອັດສະລິຍະ RAG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,400&family=JetBrains+Mono:wght@400;500;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:             #ffffff;
+      --surface:        #f0f5ff;
+      --surface-2:      #e3ecff;
+      --border:         #c8d8f0;
+      --border-2:       #a8c0e8;
+      --gold:           #1a6fd4;
+      --gold-dim:       #4a90d9;
+      --gold-bright:    #0d52a8;
+      --text:           #0a1628;
+      --text-2:         #3a5a8a;
+      --text-muted:     #8aaac8;
+      --green:          #1e8a4e;
+      --red:            #c0392b;
+      --amber:          #d97706;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; font-size: 14px; }
+
+    /* grain */
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: .08;
+    }
+
+    /* ── Layout ── */
+    .shell { display: flex; flex-direction: column; height: 100vh; }
+
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px; flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      position: relative;
+    }
+    .header::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold-dim) 50%, transparent 100%);
+    }
+
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo-mark {
+      width: 30px; height: 30px; border: 1.5px solid var(--gold);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--gold); font-size: 16px;
+    }
+    .logo-text { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 900; color: var(--gold); letter-spacing: .03em; }
+    .logo-sub { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-2); letter-spacing: .18em; text-transform: uppercase; margin-top: 1px; }
+
+    .api-status { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-2); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); transition: background .3s; }
+    .dot.online { background: var(--green); box-shadow: 0 0 5px var(--green); animation: blink 2.5s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .body { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Left panel ── */
+    .left { width: 320px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+    .pane-head {
+      padding: 14px 18px 10px;
+      font-family: 'JetBrains Mono', monospace; font-size: 9px;
+      letter-spacing: .2em; text-transform: uppercase; color: var(--gold-dim);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .pane-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* upload */
+    .upload-wrap { padding: 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+
+    .drop-zone {
+      border: 1.5px dashed var(--border-2); padding: 24px 16px;
+      text-align: center; cursor: pointer; transition: all .2s;
+      background: var(--surface);
+    }
+    .drop-zone:hover, .drop-zone.over { border-color: var(--gold); background: var(--surface-2); }
+    .drop-zone.over { box-shadow: inset 0 0 24px rgba(201,162,39,.06); }
+
+    .drop-icon { font-size: 26px; display: block; margin-bottom: 8px; }
+    .drop-label { font-family: 'Playfair Display', serif; font-size: 14px; color: var(--text); margin-bottom: 3px; }
+    .drop-hint { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted); letter-spacing: .06em; }
+
+    .field { margin-top: 10px; }
+    .field label { display: block; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-2); margin-bottom: 5px; }
+    .field input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border-2);
+      color: var(--text); padding: 7px 10px; font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; outline: none; transition: border-color .2s;
+    }
+    .field input:focus { border-color: var(--gold); }
+
+    .progress { height: 2px; background: var(--border); margin-top: 10px; display: none; overflow: hidden; }
+    .progress.show { display: block; }
+    .progress-bar { height: 100%; width: 0; background: var(--gold); transition: width .3s; }
+
+    .btn-ingest {
+      width: 100%; margin-top: 10px; padding: 9px;
+      background: var(--gold); color: var(--bg);
+      font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      border: none; cursor: pointer; transition: background .2s;
+    }
+    .btn-ingest:hover { background: var(--gold-bright); }
+    .btn-ingest:disabled { background: var(--text-muted); cursor: not-allowed; }
+
+    /* doc list */
+    .doc-scroll { flex: 1; overflow-y: auto; }
+    .doc-scroll::-webkit-scrollbar { width: 3px; }
+    .doc-scroll::-webkit-scrollbar-thumb { background: var(--border-2); }
+
+    .doc-item { padding: 11px 18px; border-bottom: 1px solid var(--border); transition: background .15s; }
+    .doc-item:hover { background: var(--surface); }
+
+    .doc-name { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; }
+    .doc-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .doc-col { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted); }
+    .doc-chunks { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted); }
+
+    .badge { font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: .1em; text-transform: uppercase; padding: 2px 6px; border: 1px solid; }
+    .badge-pending  { color: var(--text-muted); border-color: var(--text-muted); }
+    .badge-processing { color: var(--amber); border-color: var(--amber); animation: blink 1s infinite; }
+    .badge-done     { color: var(--green);  border-color: var(--green); }
+    .badge-failed   { color: var(--red);    border-color: var(--red); }
+
+    .doc-err { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--red); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .empty-docs { padding: 32px 18px; text-align: center; font-family: 'Playfair Display', serif; font-style: italic; font-size: 14px; color: var(--text-muted); }
+
+    /* ── Right panel ── */
+    .right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .query-bar {
+      display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+      padding: 10px 20px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .qb-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+    .qb-input {
+      background: var(--bg); border: 1px solid var(--border-2); color: var(--text);
+      padding: 5px 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      outline: none; transition: border-color .2s;
+    }
+    .qb-input:focus { border-color: var(--gold); }
+    .qb-input.wide { width: 160px; }
+    .qb-input.narrow { width: 60px; }
+    .qb-spacer { flex: 1; }
+    .btn-clear {
+      padding: 5px 14px; background: transparent; border: 1px solid var(--border-2);
+      color: var(--text-2); font-family: 'JetBrains Mono', monospace; font-size: 9px;
+      letter-spacing: .12em; text-transform: uppercase; cursor: pointer; transition: all .2s;
+    }
+    .btn-clear:hover { border-color: var(--gold-dim); color: var(--text); }
+
+    /* messages */
+    .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+    .messages::-webkit-scrollbar { width: 3px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border-2); }
+
+    .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    .empty-chat-title { font-family: 'Playfair Display', serif; font-size: 32px; font-style: italic; color: var(--border-2); margin-bottom: 10px; }
+    .empty-chat-sub { font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .18em; text-transform: uppercase; color: var(--text-muted); }
+
+    .msg { max-width: 80%; animation: slide-up .25s ease; }
+    @keyframes slide-up { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+    .msg-user { align-self: flex-end; background: var(--gold); color: var(--bg); padding: 12px 16px; font-weight: 700; font-size: 14px; }
+
+    .msg-ai { align-self: flex-start; }
+    .msg-ai-tag { font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: .2em; text-transform: uppercase; color: var(--gold-dim); margin-bottom: 7px; }
+    .msg-ai-bubble { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--gold-dim); padding: 16px; font-size: 14px; line-height: 1.75; }
+
+    /* sources */
+    .sources { margin-top: 10px; }
+    .sources-hd { font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: .18em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px; }
+    .src { background: var(--bg); border: 1px solid var(--border); padding: 9px 12px; margin-bottom: 6px; }
+    .src-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+    .src-file { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--gold-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 72%; }
+    .src-pg { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted); }
+    .src-body { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-2); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* thinking */
+    .thinking {
+      align-self: flex-start; display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; background: var(--surface);
+      border: 1px solid var(--border); border-left: 3px solid var(--gold-dim);
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-muted);
+    }
+    .dots { display: flex; gap: 4px; }
+    .dots span { width: 4px; height: 4px; background: var(--gold-dim); border-radius: 50%; animation: bounce .9s infinite; }
+    .dots span:nth-child(2){animation-delay:.15s} .dots span:nth-child(3){animation-delay:.3s}
+    @keyframes bounce { 0%,80%,100%{transform:scale(.6);opacity:.4} 40%{transform:scale(1);opacity:1} }
+
+    /* input */
+    .input-row { display: flex; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+    .q-input {
+      flex: 1; background: var(--bg); border: 1px solid var(--border-2); color: var(--text);
+      padding: 10px 14px; font-family: 'Lato', sans-serif; font-size: 14px;
+      outline: none; resize: none; height: 44px; line-height: 1.4; transition: border-color .2s;
+    }
+    .q-input:focus { border-color: var(--gold); }
+    .q-input::placeholder { color: var(--text-muted); }
+    .btn-send {
+      padding: 0 22px; background: var(--gold); color: var(--bg);
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase; border: none; cursor: pointer;
+      transition: background .2s; flex-shrink: 0;
+    }
+    .btn-send:hover { background: var(--gold-bright); }
+    .btn-send:disabled { background: var(--text-muted); cursor: not-allowed; }
+
+    /* toasts */
+    .toasts { position: fixed; bottom: 22px; right: 22px; z-index: 10000; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      background: var(--surface-2); border: 1px solid var(--border-2); border-left: 3px solid var(--gold);
+      padding: 11px 15px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text);
+      min-width: 220px; display: flex; align-items: center; gap: 10px;
+      animation: toast-in .25s ease;
+    }
+    .toast.ok  { border-left-color: var(--green); }
+    .toast.err { border-left-color: var(--red); }
+    @keyframes toast-in { from{opacity:0;transform:translateX(16px)} to{opacity:1;transform:translateX(0)} }
+
+    #fileInput { display: none; }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-mark">◈</div>
+      <div>
+        <div class="logo-text">ລະບົບ RAG</div>
+        <div class="logo-sub">ເອກະສານອັດສະລິຍະ</div>
+      </div>
+    </div>
+    <div class="api-status">
+      <div class="dot" id="dot"></div>
+      <span id="status-text">ກຳລັງເຊື່ອມຕໍ່…</span>
+    </div>
+  </header>
+
+  <div class="body">
+
+    <!-- Left: ingest + docs -->
+    <div class="left">
+      <div class="pane-head">ນຳເຂົ້າ</div>
+
+      <div class="upload-wrap">
+        <div class="drop-zone" id="dropZone">
+          <span class="drop-icon">⬡</span>
+          <div class="drop-label" id="dropLabel">ວາງ PDF ທີ່ນີ້</div>
+          <div class="drop-hint" id="dropHint">ຫຼື ຄລິກເພື່ອເລືອກໄຟລ໌</div>
+        </div>
+        <input type="file" id="fileInput" accept=".pdf">
+
+        <div class="field">
+          <label>ຄອລເລັກຊັນ</label>
+          <input type="text" id="ingestCollection" value="documents">
+        </div>
+
+        <div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
+        <button class="btn-ingest" id="ingestBtn" disabled>ເລືອກ PDF ກ່ອນ</button>
+      </div>
+
+      <div class="pane-head">ເອກະສານ</div>
+      <div class="doc-scroll" id="docList">
+        <div class="empty-docs">ຍັງບໍ່ມີເອກະສານ</div>
+      </div>
+    </div>
+
+    <!-- Right: query chat -->
+    <div class="right">
+      <div class="query-bar">
+        <span class="qb-label">ຄອລເລັກຊັນ</span>
+        <input type="text" class="qb-input wide" id="qCollection" value="documents">
+        <span class="qb-label">Top-K</span>
+        <input type="number" class="qb-input narrow" id="qTopK" value="4" min="1" max="20">
+        <div class="qb-spacer"></div>
+        <button class="btn-clear" id="clearBtn">ລ້າງການສົນທະນາ</button>
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="empty-chat" id="emptyChat">
+          <div class="empty-chat-title">ຖາມຫຍັງກໍ່ໄດ້</div>
+          <div class="empty-chat-sub">ສອບຖາມຈາກເອກະສານຂອງທ່ານ</div>
+        </div>
+      </div>
+
+      <div class="input-row">
+        <textarea class="q-input" id="qInput" placeholder="ຖາມຄຳຖາມກ່ຽວກັບເອກະສານຂອງທ່ານ…"></textarea>
+        <button class="btn-send" id="sendBtn">ສົ່ງ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+const API = '/api';
+const polls = new Map();
+
+// ── Status ─────────────────────────────────────────────────────────────────────
+async function checkStatus() {
+  try {
+    const r = await fetch(`${API}/documents/`);
+    const ok = r.ok;
+    document.getElementById('dot').className = 'dot' + (ok ? ' online' : '');
+    document.getElementById('status-text').textContent = ok ? 'API ອອນລາຍ' : 'API ຜິດພາດ';
+  } catch {
+    document.getElementById('dot').className = 'dot';
+    document.getElementById('status-text').textContent = 'API ອອບລາຍ';
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function toast(msg, type = '') {
+  const c = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  const icon = type === 'ok' ? '✓' : type === 'err' ? '✗' : '◈';
+  t.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(16px)'; t.style.transition = 'all .3s'; setTimeout(() => t.remove(), 320); }, 3200);
+}
+
+// ── Upload ─────────────────────────────────────────────────────────────────────
+let file = null;
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const ingestBtn  = document.getElementById('ingestBtn');
+const progress   = document.getElementById('progress');
+const progressBar= document.getElementById('progressBar');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f?.name.endsWith('.pdf')) pick(f);
+  else toast('ກະລຸນາວາງໄຟລ໌ PDF', 'err');
+});
+fileInput.addEventListener('change', () => fileInput.files[0] && pick(fileInput.files[0]));
+
+function pick(f) {
+  file = f;
+  document.getElementById('dropLabel').textContent = f.name;
+  document.getElementById('dropHint').textContent = (f.size / 1024).toFixed(1) + ' KB';
+  ingestBtn.textContent = 'ນຳເຂົ້າເອກະສານ';
+  ingestBtn.disabled = false;
+}
+
+ingestBtn.addEventListener('click', async () => {
+  if (!file) return;
+  const col = document.getElementById('ingestCollection').value.trim() || 'documents';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('collection_name', col);
+
+  ingestBtn.disabled = true;
+  ingestBtn.textContent = 'ກຳລັງອັບໂຫລດ…';
+  progress.classList.add('show');
+  progressBar.style.width = '35%';
+
+  try {
+    const r = await fetch(`${API}/ingest/`, { method: 'POST', body: fd });
+    progressBar.style.width = '80%';
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    progressBar.style.width = '100%';
+    toast(`ກຳລັງນຳເຂົ້າ: ${data.filename}`, 'ok');
+    setTimeout(() => { progress.classList.remove('show'); progressBar.style.width = '0'; }, 600);
+    startPoll(data.id);
+    loadDocs();
+    // sync query collection
+    document.getElementById('qCollection').value = col;
+    // reset
+    file = null; fileInput.value = '';
+    document.getElementById('dropLabel').textContent = 'ວາງ PDF ທີ່ນີ້';
+    document.getElementById('dropHint').textContent = 'ຫຼື ຄລິກເພື່ອເລືອກໄຟລ໌';
+    ingestBtn.textContent = 'ເລືອກ PDF ກ່ອນ';
+    ingestBtn.disabled = true;
+  } catch (e) {
+    toast('ອັບໂຫລດລົ້ມເຫລວ: ' + e.message, 'err');
+    progress.classList.remove('show');
+    ingestBtn.disabled = false;
+    ingestBtn.textContent = 'ລອງໃໝ່';
+  }
+});
+
+// ── Documents ──────────────────────────────────────────────────────────────────
+async function loadDocs() {
+  try {
+    const r = await fetch(`${API}/documents/`);
+    if (!r.ok) return;
+    const d = await r.json();
+    renderDocs(d.results ?? d);
+  } catch {}
+}
+
+function renderDocs(docs) {
+  const el = document.getElementById('docList');
+  if (!docs.length) { el.innerHTML = '<div class="empty-docs">ຍັງບໍ່ມີເອກະສານ</div>'; return; }
+  el.innerHTML = docs.map(d => `
+    <div class="doc-item">
+      <div class="doc-name" title="${d.filename}">${d.filename}</div>
+      <div class="doc-row">
+        <span class="doc-col">${d.collection_name}</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${d.chunk_count ? `<span class="doc-chunks">${d.chunk_count} chunks</span>` : ''}
+          <span class="badge badge-${d.status}">${d.status}</span>
+        </div>
+      </div>
+      ${d.error_message ? `<div class="doc-err">${d.error_message}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function startPoll(id) {
+  if (polls.has(id)) return;
+  const iv = setInterval(async () => {
+    try {
+      const r = await fetch(`${API}/documents/${id}/`);
+      const d = await r.json();
+      loadDocs();
+      if (d.status === 'done') {
+        toast(`ສຳເລັດ: ${d.filename} — ${d.chunk_count} ກ້ອນ`, 'ok');
+        clearInterval(iv); polls.delete(id);
+        document.getElementById('qCollection').value = d.collection_name;
+      } else if (d.status === 'failed') {
+        toast(`ລົ້ມເຫລວ: ${d.filename}`, 'err');
+        clearInterval(iv); polls.delete(id);
+      }
+    } catch {}
+  }, 2500);
+  polls.set(id, iv);
+}
+
+// ── Query ──────────────────────────────────────────────────────────────────────
+let busy = false;
+const qInput  = document.getElementById('qInput');
+const sendBtn = document.getElementById('sendBtn');
+const msgs    = document.getElementById('messages');
+const empty   = document.getElementById('emptyChat');
+
+qInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+sendBtn.addEventListener('click', send);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  msgs.innerHTML = ''; msgs.appendChild(empty); empty.style.display = '';
+});
+
+async function send() {
+  const q = qInput.value.trim();
+  if (!q || busy) return;
+  const col  = document.getElementById('qCollection').value.trim() || 'documents';
+  const topK = parseInt(document.getElementById('qTopK').value) || 4;
+
+  empty.style.display = 'none';
+  addMsg('user', q);
+  qInput.value = '';
+  const th = addThinking();
+  busy = true; sendBtn.disabled = true;
+
+  try {
+    const r = await fetch(`${API}/query/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, collection_name: col, top_k: topK }),
+    });
+    if (!r.ok) throw new Error(JSON.stringify(await r.json()));
+    const d = await r.json();
+    th.remove();
+    addMsg('ai', d.answer, d.sources);
+  } catch (e) {
+    th.remove();
+    addMsg('ai', 'Error: ' + e.message, []);
+  } finally {
+    busy = false; sendBtn.disabled = false;
+  }
+}
+
+function addMsg(role, text, sources = []) {
+  const el = document.createElement('div');
+  if (role === 'user') {
+    el.className = 'msg msg-user';
+    el.textContent = text;
+  } else {
+    el.className = 'msg msg-ai';
+    const srcs = sources.length ? `
+      <div class="sources">
+        <div class="sources-hd">ແຫລ່ງທີ່ມາ (${sources.length})</div>
+        ${sources.map(s => `
+          <div class="src">
+            <div class="src-head">
+              <span class="src-file">${s.source.split('/').pop() || s.source}</span>
+              <span class="src-pg">pg. ${s.page + 1}</span>
+            </div>
+            <div class="src-body">${s.page_content}</div>
+          </div>
+        `).join('')}
+      </div>` : '';
+    el.innerHTML = `
+      <div class="msg-ai-tag">◈ ລະບົບ RAG</div>
+      <div class="msg-ai-bubble">${text.replace(/\n/g, '<br>')}</div>
+      ${srcs}`;
+  }
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}
+
+function addThinking() {
+  const el = document.createElement('div');
+  el.className = 'thinking';
+  el.innerHTML = `<div class="dots"><span></span><span></span><span></span></div><span>ກຳລັງດຶງຂໍ້ມູນ &amp; ສ້າງຄຳຕອບ…</span>`;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+checkStatus();
+setInterval(checkStatus, 10000);
+loadDocs();
+setInterval(loadDocs, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Django
+django>=4.2
+djangorestframework>=3.15
+
+# Celery + Redis
+celery>=5.3
+redis>=5.0
+django-celery-results>=2.5
+
+# LangChain
+langchain>=0.3
+langchain-community>=0.3
+langchain-ollama>=0.2
+langchain-text-splitters>=0.3
+
+# Vector store
+qdrant-client>=1.9
+langchain-qdrant>=0.2
+
+# PDF parsing
+pymupdf>=1.24
+
+# API docs
+drf-spectacular>=0.27
+
+# Utils
+python-dotenv>=1.0
