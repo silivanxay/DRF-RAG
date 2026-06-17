@@ -2,6 +2,8 @@
 
 ລະບົບ RAG (Retrieval-Augmented Generation) ທີ່ສ້າງດ້ວຍ Django REST Framework, Ollama, Qdrant, ແລະ Celery — ໃຊ້ສຳລັບອັບໂຫລດໄຟລ໌ PDF ແລ້ວຖາມຄຳຖາມໂດຍໃຊ້ AI ທີ່ລັນຢູ່ໃນເຄື່ອງຂອງທ່ານເອງ.
 
+![Preview](preview.jpeg)
+
 ---
 
 ## ສິ່ງທີ່ລະບົບສາມາດເຮັດໄດ້
